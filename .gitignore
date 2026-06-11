@@ -1,0 +1,10 @@
+# secrets
+.env
+
+# go
+server/typhoon-ocr-web
+
+# node
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
