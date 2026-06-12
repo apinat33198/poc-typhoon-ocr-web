@@ -40,8 +40,8 @@ export const api = {
     );
   },
 
-  previewUrl: (docId: string, page: number): string =>
-    `/api/documents/${docId}/pages/${page}`,
+  previewUrl: (docId: string, page: number, width?: number): string =>
+    `/api/documents/${docId}/pages/${page}${width ? `?w=${width}` : ""}`,
 
   ocr: (
     docId: string,

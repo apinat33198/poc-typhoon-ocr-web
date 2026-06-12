@@ -121,9 +121,16 @@ export default function App() {
     }
   }
 
+  // Preview and result stay on the same page: stepping the preview shows that
+  // page's result (or the empty hint), picking a result tab moves the preview.
   function handlePageChange(p: number) {
     setPage(p);
-    if (results[p]) setActivePage(p);
+    setActivePage(results[p] ? p : null);
+  }
+
+  function handleSelectPage(p: number) {
+    setActivePage(p);
+    setPage(p);
   }
 
   const remaining = doc
@@ -198,7 +205,7 @@ export default function App() {
           results={results}
           activePage={activePage}
           error={error}
-          onSelectPage={setActivePage}
+          onSelectPage={handleSelectPage}
         />
       </main>
 

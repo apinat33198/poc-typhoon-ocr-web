@@ -9,7 +9,7 @@ A self-hostable web UI for [scb-10x/typhoon-ocr](https://github.com/scb-10x/typh
 - Drag-and-drop PDF / PNG / JPG upload with per-page preview
 - All three prompt modes: `v1.5` (clean markdown, LaTeX, figure descriptions in Thai or English), `default` (markdown tables), `structure` (HTML tables for complex layouts)
 - OCR a single page or the whole document sequentially with progress, cancel mid-run, and resume from the first unread page
-- Rendered / raw markdown toggle, per-page copy, download all pages as one `.md`
+- Rendered / raw / compare views — compare shows the original page side by side with the OCR result (click the image for full size) — plus per-page copy and download all pages as one `.md`
 - Works against any OpenAI-compatible endpoint: local vLLM or api.opentyphoon.ai
 - Same prompts and sampling parameters as upstream (temp 0.1, top_p 0.6, repetition_penalty 1.1–1.2)
 

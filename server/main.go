@@ -199,7 +199,11 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, doc.Path)
 		return
 	}
-	png, err := renderPDFPagePNG(doc.Path, page, 1100)
+	width := 1100
+	if v, err := strconv.Atoi(r.URL.Query().Get("w")); err == nil {
+		width = clamp(v, 200, 3000)
+	}
+	png, err := renderPDFPagePNG(doc.Path, page, width)
 	if err != nil {
 		jsonError(w, 500, "Could not render page preview: "+err.Error())
 		return

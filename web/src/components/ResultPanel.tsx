@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useMemo, useState } from "react";
-import { DocInfo, OcrResult } from "../api";
+import { api, DocInfo, OcrResult } from "../api";
 
 interface Props {
   doc: DocInfo | null;
@@ -22,7 +22,7 @@ function renderMarkdown(md: string): string {
 }
 
 export function ResultPanel({ doc, results, activePage, error, onSelectPage }: Props) {
-  const [view, setView] = useState<"rendered" | "raw">("rendered");
+  const [view, setView] = useState<"rendered" | "raw" | "compare">("rendered");
   const [copied, setCopied] = useState(false);
 
   const pages = useMemo(
@@ -32,7 +32,7 @@ export function ResultPanel({ doc, results, activePage, error, onSelectPage }: P
   const result = activePage !== null ? results[activePage] : undefined;
 
   const renderedHtml = useMemo(
-    () => (result && view === "rendered" ? renderMarkdown(result.markdown) : ""),
+    () => (result && view !== "raw" ? renderMarkdown(result.markdown) : ""),
     [result, view],
   );
 
@@ -86,6 +86,12 @@ export function ResultPanel({ doc, results, activePage, error, onSelectPage }: P
             >
               raw
             </button>
+            <button
+              className={view === "compare" ? "active" : ""}
+              onClick={() => setView("compare")}
+            >
+              compare
+            </button>
           </div>
           <button className="ghost" disabled={!result} onClick={copy}>
             {copied ? "Copied" : "Copy"}
@@ -106,6 +112,22 @@ export function ResultPanel({ doc, results, activePage, error, onSelectPage }: P
         </div>
       ) : view === "raw" ? (
         <div className="output raw">{result.markdown}</div>
+      ) : view === "compare" && doc ? (
+        <div className="compare">
+          <a
+            className="page-image"
+            href={api.previewUrl(doc.doc_id, result.page, 2200)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open full-size in a new tab"
+          >
+            <img
+              src={api.previewUrl(doc.doc_id, result.page)}
+              alt={`Page ${result.page} original`}
+            />
+          </a>
+          <div className="output" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+        </div>
       ) : (
         <div className="output" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
       )}
