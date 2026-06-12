@@ -99,20 +99,40 @@ export default function App() {
     const all = Array.from({ length: doc.pages }, (_, i) => i + 1);
     let todo = all.filter((p) => !results[p]);
     if (todo.length === 0) todo = all;
-    let current = todo[0];
+    let done = 0;
+    const failed: number[] = [];
+    const tick = () =>
+      setProgress(`reading ${todo.length} pages — ${done}/${todo.length} done…`);
+    tick();
     try {
-      for (const p of todo) {
-        current = p;
-        setPage(p);
-        setProgress(`reading page ${p} / ${doc.pages}…`);
-        await readPage(p, ctl.signal);
+      await api.ocrAll(doc.doc_id, todo, mode, figLang, ctl.signal, {
+        onResult: (r) => {
+          done++;
+          setResults((prev) => ({ ...prev, [r.page]: r }));
+          setPage(r.page);
+          setActivePage(r.page);
+          tick();
+        },
+        onPageError: (p) => {
+          done++;
+          failed.push(p);
+          tick();
+        },
+      });
+      if (failed.length > 0) {
+        failed.sort((a, b) => a - b);
+        setError(
+          `${failed.length} page(s) failed: ${failed.join(", ")}. Press Resume to retry them.`,
+        );
+        setProgress("");
+      } else {
+        flashProgress(`done — ${todo.length} pages`);
       }
-      flashProgress(`done — ${doc.pages} pages`);
     } catch (err) {
       if (ctl.signal.aborted) {
-        flashProgress(`cancelled at page ${current}`);
+        flashProgress(`cancelled — ${done}/${todo.length} pages read`);
       } else {
-        setError(`Stopped at page ${current}: ${(err as Error).message}`);
+        setError((err as Error).message);
         setProgress("");
       }
     } finally {

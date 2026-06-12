@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -199,9 +200,18 @@ type chatResponse struct {
 
 var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
+// ocrPage renders one page, calls the model, and returns the markdown.
+func ocrPage(ctx context.Context, doc *Doc, page int, taskType, figureLanguage string) (string, error) {
+	messages, err := buildOCRMessages(doc, page, taskType, figureLanguage)
+	if err != nil {
+		return "", err
+	}
+	return callModel(ctx, messages, taskType)
+}
+
 // callModel sends the messages to the OpenAI-compatible endpoint with the
 // same sampling parameters as upstream and unwraps the result for the mode.
-func callModel(messages []message, taskType string) (string, error) {
+func callModel(ctx context.Context, messages []message, taskType string) (string, error) {
 	repPenalty := 1.2
 	if taskType == "v1.5" {
 		repPenalty = 1.1
@@ -218,7 +228,7 @@ func callModel(messages []message, taskType string) (string, error) {
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}

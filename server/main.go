@@ -19,12 +19,13 @@ import (
 )
 
 type Config struct {
-	BaseURL     string
-	APIKey      string
-	Model       string
-	Port        string
-	WebDir      string
-	MaxUploadMB int64
+	BaseURL        string
+	APIKey         string
+	Model          string
+	Port           string
+	WebDir         string
+	MaxUploadMB    int64
+	OCRConcurrency int
 }
 
 var (
@@ -95,13 +96,18 @@ func main() {
 	loadDotEnv(".env")
 	loadDotEnv("../.env") // also works when launched from server/
 	maxMB, _ := strconv.ParseInt(envOr("MAX_UPLOAD_MB", "50"), 10, 64)
+	conc, _ := strconv.Atoi(envOr("OCR_CONCURRENCY", "4"))
+	if conc < 1 {
+		conc = 1
+	}
 	cfg = Config{
-		BaseURL:     strings.TrimRight(envOr("TYPHOON_BASE_URL", "http://localhost:8101/v1"), "/"),
-		APIKey:      envOr("TYPHOON_API_KEY", "no-key"),
-		Model:       envOr("TYPHOON_OCR_MODEL", "typhoon-ocr"),
-		Port:        envOr("PORT", "7870"),
-		WebDir:      resolveWebDir(),
-		MaxUploadMB: maxMB,
+		BaseURL:        strings.TrimRight(envOr("TYPHOON_BASE_URL", "http://localhost:8101/v1"), "/"),
+		APIKey:         envOr("TYPHOON_API_KEY", "no-key"),
+		Model:          envOr("TYPHOON_OCR_MODEL", "typhoon-ocr"),
+		Port:           envOr("PORT", "7870"),
+		WebDir:         resolveWebDir(),
+		MaxUploadMB:    maxMB,
+		OCRConcurrency: conc,
 	}
 	if _, err := os.Stat(filepath.Join(cfg.WebDir, "index.html")); err != nil {
 		log.Printf("WARNING: frontend build not found at %q — run `npm install && npm run build` in web/, or set WEB_DIR", cfg.WebDir)
@@ -113,6 +119,7 @@ func main() {
 	mux.HandleFunc("POST /api/documents", handleUpload)
 	mux.HandleFunc("GET /api/documents/{id}/pages/{n}", handlePreview)
 	mux.HandleFunc("POST /api/documents/{id}/ocr", handleOCR)
+	mux.HandleFunc("POST /api/documents/{id}/ocr-all", handleOCRAll)
 	mux.Handle("/", http.FileServer(http.Dir(cfg.WebDir)))
 
 	log.Printf("typhoon-ocr-web listening on :%s  (model %s @ %s)", cfg.Port, cfg.Model, cfg.BaseURL)
@@ -219,6 +226,28 @@ type ocrRequest struct {
 	FigureLanguage string `json:"figure_language"`
 }
 
+// validateOCRParams fills in defaults and returns an error message for
+// invalid mode combinations ("" when valid). Shared by the single-page and
+// batch endpoints.
+func validateOCRParams(taskType, figureLanguage *string) string {
+	if *taskType == "" {
+		*taskType = "v1.5"
+	}
+	if *figureLanguage == "" {
+		*figureLanguage = "Thai"
+	}
+	if *taskType != "default" && *taskType != "structure" && *taskType != "v1.5" {
+		return "task_type must be 'default', 'structure', or 'v1.5'."
+	}
+	if *figureLanguage != "Thai" && *figureLanguage != "English" {
+		return "figure_language must be 'Thai' or 'English'."
+	}
+	if strings.Contains(cfg.Model, "typhoon-ocr-preview") && *taskType == "v1.5" {
+		return "The hosted typhoon-ocr-preview model only supports 'default' and 'structure' modes."
+	}
+	return ""
+}
+
 func handleOCR(w http.ResponseWriter, r *http.Request) {
 	var req ocrRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -228,22 +257,8 @@ func handleOCR(w http.ResponseWriter, r *http.Request) {
 	if req.Page == 0 {
 		req.Page = 1
 	}
-	if req.TaskType == "" {
-		req.TaskType = "v1.5"
-	}
-	if req.FigureLanguage == "" {
-		req.FigureLanguage = "Thai"
-	}
-	if req.TaskType != "default" && req.TaskType != "structure" && req.TaskType != "v1.5" {
-		jsonError(w, 400, "task_type must be 'default', 'structure', or 'v1.5'.")
-		return
-	}
-	if req.FigureLanguage != "Thai" && req.FigureLanguage != "English" {
-		jsonError(w, 400, "figure_language must be 'Thai' or 'English'.")
-		return
-	}
-	if strings.Contains(cfg.Model, "typhoon-ocr-preview") && req.TaskType == "v1.5" {
-		jsonError(w, 400, "The hosted typhoon-ocr-preview model only supports 'default' and 'structure' modes.")
+	if msg := validateOCRParams(&req.TaskType, &req.FigureLanguage); msg != "" {
+		jsonError(w, 400, msg)
 		return
 	}
 	doc, ok := docAndPage(w, r, req.Page)
@@ -258,7 +273,7 @@ func handleOCR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	started := time.Now()
-	markdown, err := callModel(messages, req.TaskType)
+	markdown, err := callModel(r.Context(), messages, req.TaskType)
 	if err != nil {
 		// Full error (which may embed the endpoint URL) goes to the log only.
 		log.Printf("OCR request failed for page %d of %s: %v", req.Page, doc.Name, err)
