@@ -48,6 +48,7 @@ export const api = {
     page: number,
     taskType: TaskType,
     figureLanguage: FigureLanguage,
+    signal?: AbortSignal,
   ): Promise<OcrResult> =>
     fetch(`/api/documents/${docId}/ocr`, {
       method: "POST",
@@ -57,5 +58,6 @@ export const api = {
         task_type: taskType,
         figure_language: figureLanguage,
       }),
+      signal,
     }).then((r) => unwrap<OcrResult>(r)),
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   DocInfo,
@@ -22,6 +22,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
@@ -48,25 +49,42 @@ export default function App() {
     setError("");
   }
 
-  async function readPage(p: number): Promise<OcrResult> {
-    const r = await api.ocr(doc!.doc_id, p, mode, figLang);
+  async function readPage(p: number, signal: AbortSignal): Promise<OcrResult> {
+    const r = await api.ocr(doc!.doc_id, p, mode, figLang, signal);
     setResults((prev) => ({ ...prev, [p]: r }));
     setActivePage(p);
     return r;
+  }
+
+  function handleCancel() {
+    abortRef.current?.abort();
+  }
+
+  function flashProgress(msg: string) {
+    setProgress(msg);
+    setTimeout(() => setProgress(""), 2500);
   }
 
   async function handleRun() {
     if (!doc || busy) return;
     setError("");
     setBusy(true);
+    const ctl = new AbortController();
+    abortRef.current = ctl;
     setProgress(`reading page ${page}…`);
     try {
-      await readPage(page);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
+      await readPage(page, ctl.signal);
       setProgress("");
+    } catch (err) {
+      if (ctl.signal.aborted) {
+        flashProgress("cancelled");
+      } else {
+        setError((err as Error).message);
+        setProgress("");
+      }
+    } finally {
+      abortRef.current = null;
+      setBusy(false);
     }
   }
 
@@ -74,20 +92,31 @@ export default function App() {
     if (!doc || busy) return;
     setError("");
     setBusy(true);
-    let current = 1;
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    // Resume: only read pages without a result yet; if every page is done,
+    // re-read the whole document (e.g. after switching modes).
+    const all = Array.from({ length: doc.pages }, (_, i) => i + 1);
+    let todo = all.filter((p) => !results[p]);
+    if (todo.length === 0) todo = all;
+    let current = todo[0];
     try {
-      for (let p = 1; p <= doc.pages; p++) {
+      for (const p of todo) {
         current = p;
         setPage(p);
         setProgress(`reading page ${p} / ${doc.pages}…`);
-        await readPage(p);
+        await readPage(p, ctl.signal);
       }
-      setProgress(`done — ${doc.pages} pages`);
-      setTimeout(() => setProgress(""), 2500);
+      flashProgress(`done — ${doc.pages} pages`);
     } catch (err) {
-      setError(`Stopped at page ${current}: ${(err as Error).message}`);
-      setProgress("");
+      if (ctl.signal.aborted) {
+        flashProgress(`cancelled at page ${current}`);
+      } else {
+        setError(`Stopped at page ${current}: ${(err as Error).message}`);
+        setProgress("");
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   }
@@ -96,6 +125,11 @@ export default function App() {
     setPage(p);
     if (results[p]) setActivePage(p);
   }
+
+  const remaining = doc
+    ? Array.from({ length: doc.pages }, (_, i) => i + 1).filter((p) => !results[p])
+        .length
+    : 0;
 
   return (
     <>
@@ -135,16 +169,26 @@ export default function App() {
           />
 
           <div className="actions">
-            <button className="primary" disabled={!doc || busy} onClick={handleRun}>
-              Read this page
-            </button>
-            <button
-              className="secondary"
-              disabled={!doc || busy || (doc?.pages ?? 1) === 1}
-              onClick={handleRunAll}
-            >
-              Read all pages
-            </button>
+            {busy ? (
+              <button className="secondary" onClick={handleCancel}>
+                Cancel
+              </button>
+            ) : (
+              <>
+                <button className="primary" disabled={!doc} onClick={handleRun}>
+                  Read this page
+                </button>
+                <button
+                  className="secondary"
+                  disabled={!doc || (doc?.pages ?? 1) === 1}
+                  onClick={handleRunAll}
+                >
+                  {remaining > 0 && remaining < (doc?.pages ?? 0)
+                    ? `Resume (${remaining} left)`
+                    : "Read all pages"}
+                </button>
+              </>
+            )}
           </div>
           {progress && <div className="progress">{progress}</div>}
         </section>
