@@ -14,7 +14,6 @@ export interface OcrResult {
 
 export interface ServerConfig {
   model: string;
-  base_url: string;
 }
 
 export type TaskType = "v1.5" | "default" | "structure";

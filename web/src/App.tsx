@@ -150,7 +150,7 @@ export default function App() {
         <div className={`endpoint${config ? " up" : ""}`}>
           <span className="dot" />
           <span>
-            {config ? `${config.model} @ ${config.base_url}` : "server unreachable"}
+            {config ? config.model : "server unreachable"}
           </span>
         </div>
       </header>

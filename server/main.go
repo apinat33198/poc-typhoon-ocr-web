@@ -121,8 +121,9 @@ func main() {
 	}
 }
 
+// The base URL is intentionally not exposed: it can reveal internal hosts.
 func handleConfig(w http.ResponseWriter, _ *http.Request) {
-	jsonOK(w, map[string]string{"model": cfg.Model, "base_url": cfg.BaseURL})
+	jsonOK(w, map[string]string{"model": cfg.Model})
 }
 
 var allowedExt = map[string]bool{".pdf": true, ".png": true, ".jpg": true, ".jpeg": true}
@@ -259,7 +260,9 @@ func handleOCR(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	markdown, err := callModel(messages, req.TaskType)
 	if err != nil {
-		jsonError(w, 502, fmt.Sprintf("OCR model request failed (%s): %v", cfg.BaseURL, err))
+		// Full error (which may embed the endpoint URL) goes to the log only.
+		log.Printf("OCR request failed for page %d of %s: %v", req.Page, doc.Name, err)
+		jsonError(w, 502, "OCR model request failed — check the server log and that the model endpoint is up.")
 		return
 	}
 
